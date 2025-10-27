@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OBRD : Object Detection Ultimate</title>
+  <title>OBRD : Object Detection PWA</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0e0e0e">
   <style>
     body {
       margin: 0;
@@ -11,12 +13,12 @@
       color: #fff;
       font-family: Arial, sans-serif;
       text-align: center;
-      overflow-x: hidden;
     }
-    h1 { margin: 20px 0; }
+    h1 { margin-top: 20px; }
     #camera-container {
       position: relative;
       display: inline-block;
+      margin-top: 20px;
     }
     video, canvas {
       border-radius: 10px;
@@ -30,8 +32,7 @@
       left: 0;
     }
     #status {
-      margin-top: 15px;
-      font-size: 1.1em;
+      margin-top: 10px;
       color: #00ff99;
     }
     #controls { margin-top: 20px; }
@@ -41,15 +42,14 @@
       border: none;
       padding: 10px 20px;
       border-radius: 5px;
-      font-size: 1em;
       cursor: pointer;
-      transition: background 0.3s;
+      font-size: 1em;
     }
     button:hover { background: #00cc88; }
   </style>
 </head>
 <body>
-  <h1>OBRD : Object Detection Ultimate</h1>
+  <h1>OBRD : Object Detection PWA</h1>
 
   <div id="camera-container">
     <video id="video" autoplay muted playsinline></video>
@@ -60,158 +60,70 @@
     <button id="flip-btn">🔄 Flip Camera</button>
   </div>
 
-  <div id="status">Loading advanced models...</div>
+  <div id="status">Loading models...</div>
 
-  <!-- Core frameworks -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/efficientdet"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/facemesh"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
-  <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
-
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const status = document.getElementById('status');
     const flipBtn = document.getElementById('flip-btn');
-    let currentFacingMode = 'environment', stream;
-
-    // Models
-    let models = {};
-    let modelCount = 0;
-
-    // Colors for each model for simultaneous multi-model visualization
-    const modelColors = {
-      coco: "#00FF99",
-      mobilenet: "#FFA500",
-      effdet: "#00BFFF",
-      facemesh: "#FF69B4",
-      blazeface: "#FFD700",
-      bodypix: "#ADFF2F",
-      handpose: "#00FFFF",
-      yolov5: "#FF4500",
-      yolov8: "#9400D3",
-      detr: "#FF0000"
-    };
+    let model, currentMode = 'environment', stream;
 
     async function setupCamera() {
       if (stream) stream.getTracks().forEach(t => t.stop());
-      const constraints = {
-        video: {
-          facingMode: { exact: currentFacingMode },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
-      };
-      stream = await navigator.mediaDevices.getUserMedia(constraints).catch(async () =>
+      const constraints = {video:{facingMode:{exact:currentMode}}};
+      stream = await navigator.mediaDevices.getUserMedia(constraints).catch(() =>
         navigator.mediaDevices.getUserMedia({ video: true })
       );
       video.srcObject = stream;
-      return new Promise(resolve => {
+      return new Promise(res => {
         video.onloadedmetadata = () => {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          resolve(video);
+          res(video);
         };
       });
     }
 
-    async function detectAll() {
+    async function detect() {
+      const predictions = await model.detect(video);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      let predictions = [];
-
-      // Model 1: COCO-SSD
-      if (models.coco) (await models.coco.detect(video)).forEach(p =>
-        predictions.push({ ...p, model: "COCO-SSD" })
-      );
-
-      // Model 2: MobileNet
-      if (models.mobilenet) (await models.mobilenet.classify(video)).forEach(p =>
-        predictions.push({ class: p.className, score: p.probability, bbox: [10, 10, 250, 50], model: "MobileNet" })
-      );
-
-      // Model 3: EfficientDet
-      if (models.effdet) (await models.effdet.detect(video)).forEach(p =>
-        predictions.push({ ...p, model: "EfficientDet" })
-      );
-
-      // Model 4-7 (Specialized TensorFlow models)
-      if (models.face) {
-        const facePred = await models.face.estimateFaces({ input: video });
-        facePred.forEach(f => {
-          const box = f.boundingBox;
-          predictions.push({ class: "face", score: 0.92, bbox: [box.topLeft[0], box.topLeft[1], box.bottomRight[0] - box.topLeft[0], box.bottomRight[1] - box.topLeft[1]], model: "FaceMesh" });
-        });
-      }
-
-      if (models.blaze) {
-        const faces = await models.blaze.estimateFaces(video);
-        faces.forEach(f => {
-          const [x1, y1] = f.topLeft;
-          const [x2, y2] = f.bottomRight;
-          predictions.push({ class: "face", score: 0.85, bbox: [x1, y1, x2-x1, y2-y1], model: "BlazeFace" });
-        });
-      }
-
-      if (models.body) {
-        await models.body.segmentPerson(video);
-        predictions.push({ class: "person", score: 0.8, bbox: [25, 25, 200, 80], model: "BodyPix" });
-      }
-
-      if (models.hand) {
-        const hands = await models.hand.estimateHands(video);
-        hands.forEach(() => predictions.push({ class: "hand", score: 0.78, bbox: [40, 40, 120, 90], model: "HandPose" }));
-      }
-
-      // Model 8–10 placeholders for advanced ONNX-based models (simulated here)
-      // In real deployment, you’d load YOLOv5/YOLOv8/DETR ONNX models here.
-      predictions.push({ class: "Pen", score: 0.91, bbox: [100, 200, 120, 50], model: "YOLOv5" });
-      predictions.push({ class: "Dog", score: 0.95, bbox: [300, 180, 300, 200], model: "YOLOv8" });
-      predictions.push({ class: "Car", score: 0.89, bbox: [50, 250, 400, 180], model: "DETR" });
-
-      // Visualization
-      ctx.lineWidth = 2;
       predictions.forEach(p => {
-        const color = modelColors[p.model.toLowerCase().split("-")[0]] || "#FFFFFF";
-        ctx.strokeStyle = color;
+        ctx.strokeStyle = '#00ff99';
+        ctx.lineWidth = 2;
         ctx.strokeRect(...p.bbox);
-        ctx.fillStyle = color;
-        ctx.font = "16px Arial";
-        ctx.fillText(`${p.class} (${Math.round(p.score * 100)}%) [${p.model}]`, p.bbox[0], p.bbox[1] > 20 ? p.bbox[1] - 5 : 20);
+        ctx.fillStyle = '#00ff99';
+        ctx.font = '16px Arial';
+        ctx.fillText(`${p.class} (${Math.round(p.score*100)}%)`,
+          p.bbox[0], p.bbox[1] > 20 ? p.bbox[1]-5 : 20);
       });
-
-      requestAnimationFrame(detectAll);
+      requestAnimationFrame(detect);
     }
 
-    async function loadModels() {
-      models.coco = await cocoSsd.load(); modelCount++;
-      models.mobilenet = await mobilenet.load(); modelCount++;
-      models.effdet = await efficientdet.load({ model: "lite0" }); modelCount++;
-      models.face = await facemesh.load(); modelCount++;
-      models.blaze = await blazeface.load(); modelCount++;
-      models.body = await bodyPix.load(); modelCount++;
-      models.hand = await handpose.load(); modelCount++;
-      // Placeholder for YOLOv5, YOLOv8, DETR (ONNX-based loading can be implemented separately)
-      modelCount += 3;
-      status.innerText = `All ${modelCount} models loaded. Advanced detection running...`;
-      detectAll();
+    async function startApp() {
+      await setupCamera();
+      model = await cocoSsd.load();
+      status.textContent = 'Model loaded. Detecting...';
+      detect();
     }
 
-    flipBtn.addEventListener("click", async () => {
-      currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+    flipBtn.addEventListener('click', async () => {
+      currentMode = currentMode === 'environment' ? 'user' : 'environment';
       await setupCamera();
     });
 
-    (async () => {
-      await setupCamera();
-      video.play();
-      loadModels();
-    })();
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js');
+      });
+    }
+
+    startApp();
   </script>
 </body>
 </html>
