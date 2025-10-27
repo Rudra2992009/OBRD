@@ -1,12 +1,12 @@
 {
-  "name": "OBRD : Object Detection",
+  "name": "OBRD : Hybrid Object Detection",
   "short_name": "OBRD",
   "start_url": "index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0e0e0e",
   "theme_color": "#00ff99",
-  "description": "Offline Object Detection PWA using TensorFlow.js",
+  "description": "Offline + Cloud Object Detection Progressive Web App using TensorFlow.js and Hugging Face models",
   "icons": [
     {
       "src": "icon-192.png",
