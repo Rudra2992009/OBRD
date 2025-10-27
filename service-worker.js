@@ -1,24 +1,15 @@
-const CACHE_NAME = 'obrd-cache-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
+const CACHE='obrd-hybrid-v1';
+const urls=[
+  '/', '/index.html','/manifest.json',
   'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs',
-  'https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd'
+  'https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd',
+  'https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet',
+  'https://cdn.jsdelivr.net/npm/@tensorflow-models/efficientdet'
 ];
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
-  );
+self.addEventListener('install',e=>{
+  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(urls)));
 });
-
-self.addEventListener('fetch', e => {
-  e.respondWith(
-    caches.match(e.request).then(response =>
-      response || fetch(e.request)
-    )
-  );
+self.addEventListener('fetch',e=>{
+  e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));
 });
