@@ -1,9 +1,9 @@
 {
-  "name": "obrd-object-detection-pwa",
-  "version": "1.0.0",
-  "description": "Offline Object Detection PWA using TensorFlow.js and COCO-SSD",
+  "name": "obrd-hybrid-detection",
+  "version": "2.0.0",
+  "description": "Hybrid offline+cloud object detection PWA",
   "scripts": {
-    "start": "npx http-server -p 8080"
-  },
-  "dependencies": {}
+    "start": "npx http-server -p 8080",
+    "api": "node api-server/server.js"
+  }
 }
