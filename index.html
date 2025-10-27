@@ -59,7 +59,7 @@
 </head>
 <body>
   <h1>OBRD : Object Detection</h1>
-  
+
   <div id="camera-container">
     <video id="video" autoplay muted playsinline></video>
     <canvas id="canvas"></canvas>
@@ -69,17 +69,18 @@
     <button id="flip-btn">🔄 Flip Camera</button>
   </div>
 
-  <div id="status">Loading model...</div>
+  <div id="status">Loading models...</div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const status = document.getElementById('status');
     const flipBtn = document.getElementById('flip-btn');
-    let model;
+    let cocoModel, mobileModel;
     let currentFacingMode = 'environment';
     let stream;
 
@@ -95,7 +96,6 @@
       };
 
       stream = await navigator.mediaDevices.getUserMedia(constraints).catch(async () => {
-        // fallback if specified camera not available
         return navigator.mediaDevices.getUserMedia({ video: true });
       });
 
@@ -111,25 +111,57 @@
     }
 
     async function detectObjects() {
-      const predictions = await model.detect(video);
+      const cocoPreds = await cocoModel.detect(video);
+      const mobilePreds = await mobileModel.classify(video);
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      predictions.forEach(pred => {
+
+      // Combine results intelligently
+      let allPredictions = [];
+
+      cocoPreds.forEach(p => {
+        allPredictions.push({
+          class: p.class,
+          score: p.score,
+          bbox: p.bbox
+        });
+      });
+
+      mobilePreds.forEach(p => {
+        allPredictions.push({
+          class: p.className,
+          score: p.probability,
+          bbox: [20, 20, canvas.width - 40, 40] // approximate bounding for classification
+        });
+      });
+
+      // Take only top predictions
+      allPredictions.sort((a, b) => b.score - a.score);
+      const topPred = allPredictions[0];
+
+      if (topPred) {
         ctx.strokeStyle = '#00ff99';
         ctx.lineWidth = 2;
-        ctx.strokeRect(...pred.bbox);
+        ctx.strokeRect(...topPred.bbox);
         ctx.fillStyle = '#00ff99';
-        ctx.font = '16px Arial';
-        ctx.fillText(`${pred.class} (${Math.round(pred.score * 100)}%)`, pred.bbox[0], pred.bbox[1] > 15 ? pred.bbox[1] - 5 : 15);
-      });
+        ctx.font = '18px Arial';
+        ctx.fillText(
+          `${topPred.class} (${Math.round(topPred.score * 100)}%)`,
+          topPred.bbox[0],
+          topPred.bbox[1] > 20 ? topPred.bbox[1] - 5 : 20
+        );
+      }
+
       requestAnimationFrame(detectObjects);
     }
 
     async function startApp() {
       await setupCamera();
       video.play();
-      model = await cocoSsd.load();
-      status.innerText = 'Model loaded. Detecting objects...';
+      cocoModel = await cocoSsd.load();
+      mobileModel = await mobilenet.load();
+      status.innerText = 'Models loaded. Detecting objects...';
       detectObjects();
     }
 
