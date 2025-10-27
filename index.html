@@ -4,15 +4,57 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OBRD : Hybrid Object Detection</title>
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0e0e0e">
   <style>
-    body {margin:0;background:#0e0e0e;color:#fff;font-family:Arial;text-align:center;}
-    h1 {margin-top:20px;}
-    video,canvas{border-radius:10px;width:90vw;max-width:720px;}
-    canvas{position:absolute;top:0;left:0;}
-    #camera-container{position:relative;display:inline-block;margin-top:20px;}
-    #status{margin-top:10px;color:#00ff99;}
+    body {
+      margin: 0;
+      background-color: #0e0e0e;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    h1 {
+      margin-top: 20px;
+      color: #00ff99;
+    }
+    #camera-container {
+      position: relative;
+      display: inline-block;
+      margin-top: 20px;
+    }
+    video, canvas {
+      border-radius: 10px;
+      width: 90vw;
+      max-width: 720px;
+      height: auto;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #status {
+      margin-top: 15px;
+      font-size: 1.1em;
+      color: #00ff99;
+    }
+    #controls {
+      margin-top: 20px;
+    }
+    button {
+      background: #00ff99;
+      color: #000;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #00cc88;
+    }
   </style>
 </head>
 <body>
@@ -23,71 +65,101 @@
     <canvas id="canvas"></canvas>
   </div>
 
-  <div id="status">Loading…</div>
+  <div id="controls">
+    <button id="flip-btn">🔄 Flip Camera</button>
+  </div>
 
+  <div id="status">Initializing...</div>
+
+  <!-- TensorFlow.js libs -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/efficientdet"></script>
+  <script type="module">
+    import { detectObjectsFromServer, getServerStatus } from './static/js/apiBridge.js';
+    
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const flipBtn = document.getElementById('flip-btn');
+    const status = document.getElementById('status');
+    let cocoModel, stream, facing = 'environment';
 
-  <script>
-    const video=document.getElementById('video');
-    const canvas=document.getElementById('canvas');
-    const ctx=canvas.getContext('2d');
-    const status=document.getElementById('status');
-    const cloudURL='http://localhost:8000/api/detect';
-    let coco,effdet,mobile,stream;
-
-    async function setupCamera(){
-      if(stream)stream.getTracks().forEach(t=>t.stop());
-      const c={video:{facingMode:{exact:'environment'},width:{ideal:1920},height:{ideal:1080}}};
-      stream=await navigator.mediaDevices.getUserMedia(c).catch(()=>navigator.mediaDevices.getUserMedia({video:true}));
-      video.srcObject=stream;
-      return new Promise(r=>video.onloadedmetadata=()=>{canvas.width=video.videoWidth;canvas.height=video.videoHeight;r();});
-    }
-
-    async function localDetect(){
-      const localPreds=[];
-      if(coco)(await coco.detect(video)).forEach(p=>localPreds.push({class:p.class,score:p.score,bbox:p.bbox,src:'COCO'}));
-      if(effdet)(await effdet.detect(video)).forEach(p=>localPreds.push({class:p.class,score:p.score,bbox:p.bbox,src:'EffDet'}));
-      if(mobile)(await mobile.classify(video)).forEach(p=>localPreds.push({class:p.className,score:p.probability,bbox:[10,10,250,40],src:'MobileNet'}));
-      return localPreds;
-    }
-
-    async function cloudDetect(frameBlob){
-      try{
-        const f=new FormData();f.append('frame',frameBlob);
-        const res=await fetch(cloudURL,{method:'POST',body:f});
-        return await res.json();
-      }catch{ return []; }
-    }
-
-    async function detect(){
-      const blob=new Blob([await (await fetch(video.srcObject)).arrayBuffer || new ArrayBuffer()],{type:'image/jpeg'});
-      const [localPreds,cloudPreds]=await Promise.all([localDetect(),cloudDetect(blob)]);
-      const all=[...localPreds,...cloudPreds];
-      all.sort((a,b)=>b.score-a.score);
-      ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(video,0,0,canvas.width,canvas.height);
-      all.slice(0,10).forEach(p=>{
-        ctx.strokeStyle=p.src==='COCO'?'#00FF99':p.src==='EffDet'?'#00BFFF':p.src==='MobileNet'?'#FFA500':'#FF00FF';
-        ctx.lineWidth=2;ctx.strokeRect(...p.bbox);
-        ctx.font='16px Arial';ctx.fillStyle=ctx.strokeStyle;
-        ctx.fillText(`${p.class} (${Math.round(p.score*100)}%) [${p.src}]`,p.bbox[0],p.bbox[1]>20?p.bbox[1]-5:20);
+    // Setup Camera
+    async function setupCamera() {
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      const constraints = {
+        video: {
+          facingMode: { exact: facing },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints)
+        .catch(() => navigator.mediaDevices.getUserMedia({ video: true }));
+      video.srcObject = stream;
+      return new Promise(resolve => video.onloadedmetadata = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        resolve(video);
       });
+    }
+
+    // Capture current frame as Blob
+    async function getFrameBlob() {
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = video.videoWidth;
+      offCanvas.height = video.videoHeight;
+      const offCtx = offCanvas.getContext('2d');
+      offCtx.drawImage(video, 0, 0);
+      return await new Promise(r => offCanvas.toBlob(r, 'image/jpeg'));
+    }
+
+    // Local and Cloud Detection
+    async function detect() {
+      const predictions = await cocoModel.detect(video);
+      const frameBlob = await getFrameBlob();
+      const cloud = await detectObjectsFromServer(frameBlob);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      [...predictions, ...cloud].forEach(p => {
+        const color = p.src ? '#FF00FF' : '#00FF99';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(...p.bbox);
+        ctx.fillStyle = color;
+        ctx.font = '16px Arial';
+        const label = `${p.class || p.className} (${Math.round(p.score * 100)}%)`;
+        ctx.fillText(label, p.bbox[0], p.bbox[1] > 20 ? p.bbox[1] - 5 : 20);
+      });
+
       requestAnimationFrame(detect);
     }
 
-    async function start(){
+    async function startApp() {
       await setupCamera();
-      coco=await cocoSsd.load();
-      effdet=await efficientdet.load({model:'lite0'});
-      mobile=await mobilenet.load();
-      status.textContent='Models loaded. Hybrid detection active.';
+      status.textContent = 'Loading COCO model...';
+      cocoModel = await cocoSsd.load();
+      const apiStatus = await getServerStatus();
+      if (apiStatus.online) {
+        status.textContent = 'Hybrid detection active (Offline + Cloud).';
+      } else {
+        status.textContent = 'Offline detection active (Cloud unreachable).';
+      }
       detect();
     }
 
-    if('serviceWorker' in navigator){navigator.serviceWorker.register('service-worker.js');}
-    start();
+    flipBtn.addEventListener('click', async () => {
+      facing = facing === 'environment' ? 'user' : 'environment';
+      await setupCamera();
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+
+    startApp();
   </script>
 </body>
 </html>
