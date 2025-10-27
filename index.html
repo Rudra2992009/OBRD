@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OBRD : Hybrid Object Detection</title>
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#0e0e0e">
+  <meta name="theme-color" content="#0e0e0e" />
   <style>
     body {
       margin: 0;
@@ -13,10 +13,12 @@
       color: #fff;
       font-family: Arial, sans-serif;
       text-align: center;
+      overflow-x: hidden;
     }
     h1 {
       margin-top: 20px;
       color: #00ff99;
+      font-weight: 600;
     }
     #camera-container {
       position: relative;
@@ -55,8 +57,12 @@
     button:hover {
       background: #00cc88;
     }
+    #status.offline {
+      color: #ff5555;
+    }
   </style>
 </head>
+
 <body>
   <h1>OBRD : Hybrid Object Detection</h1>
 
@@ -69,24 +75,29 @@
     <button id="flip-btn">🔄 Flip Camera</button>
   </div>
 
-  <div id="status">Initializing...</div>
+  <div id="status">Initializing camera...</div>
 
-  <!-- TensorFlow.js libs -->
+  <!-- TensorFlow.js and COCO-SSD -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <!-- App Logic -->
   <script type="module">
     import { detectObjectsFromServer, getServerStatus } from './static/js/apiBridge.js';
-    
+
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const flipBtn = document.getElementById('flip-btn');
-    const status = document.getElementById('status');
-    let cocoModel, stream, facing = 'environment';
+    const statusEl = document.getElementById('status');
+    let model, stream, facing = 'environment';
+    let apiOnline = false;
 
-    // Setup Camera
+    /* ==============================
+       CAMERA SETUP
+    ============================== */
     async function setupCamera() {
-      if (stream) stream.getTracks().forEach(track => track.stop());
+      if (stream) stream.getTracks().forEach(t => t.stop());
       const constraints = {
         video: {
           facingMode: { exact: facing },
@@ -94,36 +105,43 @@
           height: { ideal: 1080 }
         }
       };
-      stream = await navigator.mediaDevices.getUserMedia(constraints)
-        .catch(() => navigator.mediaDevices.getUserMedia({ video: true }));
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
       video.srcObject = stream;
-      return new Promise(resolve => video.onloadedmetadata = () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        resolve(video);
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          resolve();
+        };
       });
     }
 
-    // Capture current frame as Blob
-    async function getFrameBlob() {
+    async function captureFrame() {
       const offCanvas = document.createElement('canvas');
       offCanvas.width = video.videoWidth;
       offCanvas.height = video.videoHeight;
-      const offCtx = offCanvas.getContext('2d');
-      offCtx.drawImage(video, 0, 0);
-      return await new Promise(r => offCanvas.toBlob(r, 'image/jpeg'));
+      const ctx2 = offCanvas.getContext('2d');
+      ctx2.drawImage(video, 0, 0);
+      return new Promise(resolve => offCanvas.toBlob(resolve, 'image/jpeg'));
     }
 
-    // Local and Cloud Detection
+    /* ==============================
+       HYBRID DETECTION FUNCTION
+    ============================== */
     async function detect() {
-      const predictions = await cocoModel.detect(video);
-      const frameBlob = await getFrameBlob();
-      const cloud = await detectObjectsFromServer(frameBlob);
+      const local = await model.detect(video);
+      const frame = await captureFrame();
+      const cloud = apiOnline ? await detectObjectsFromServer(frame) : [];
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      [...predictions, ...cloud].forEach(p => {
+      const merged = [...local, ...cloud];
+      merged.forEach(p => {
         const color = p.src ? '#FF00FF' : '#00FF99';
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
@@ -137,17 +155,38 @@
       requestAnimationFrame(detect);
     }
 
+    /* ==============================
+       ONLINE STATUS MONITOR
+    ============================== */
+    async function monitorAPI() {
+      try {
+        const status = await getServerStatus();
+        if (status.online && !apiOnline) {
+          statusEl.classList.remove('offline');
+          statusEl.textContent = 'Hybrid detection active (Offline + Cloud).';
+        } else if (!status.online && apiOnline) {
+          statusEl.classList.add('offline');
+          statusEl.textContent = 'Offline detection active (Cloud unavailable).';
+        }
+        apiOnline = status.online;
+      } catch {
+        apiOnline = false;
+        statusEl.classList.add('offline');
+        statusEl.textContent = 'Offline detection active (Cloud unavailable).';
+      }
+    }
+
+    /* ==============================
+       INITIALIZATION
+    ============================== */
     async function startApp() {
       await setupCamera();
-      status.textContent = 'Loading COCO model...';
-      cocoModel = await cocoSsd.load();
-      const apiStatus = await getServerStatus();
-      if (apiStatus.online) {
-        status.textContent = 'Hybrid detection active (Offline + Cloud).';
-      } else {
-        status.textContent = 'Offline detection active (Cloud unreachable).';
-      }
+      statusEl.textContent = 'Loading COCO-SSD model...';
+      model = await cocoSsd.load();
+      statusEl.textContent = 'Model loaded. Checking API connection...';
+      await monitorAPI();
       detect();
+      setInterval(monitorAPI, 10000); // ping API every 10 sec
     }
 
     flipBtn.addEventListener('click', async () => {
@@ -159,6 +198,7 @@
       navigator.serviceWorker.register('service-worker.js');
     }
 
+    // Start everything
     startApp();
   </script>
 </body>
