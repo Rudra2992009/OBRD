@@ -12,9 +12,7 @@
       font-family: Arial, sans-serif;
       text-align: center;
     }
-    h1 {
-      margin-top: 20px;
-    }
+    h1 { margin-top: 20px; }
     #camera-container {
       position: relative;
       display: inline-block;
@@ -26,9 +24,7 @@
       max-width: 640px;
       height: auto;
     }
-    video {
-      display: block;
-    }
+    video { display: block; }
     canvas {
       position: absolute;
       top: 0;
@@ -39,9 +35,7 @@
       font-size: 1.1em;
       color: #00ff99;
     }
-    #controls {
-      margin-top: 20px;
-    }
+    #controls { margin-top: 20px; }
     button {
       background: #00ff99;
       color: #000;
@@ -52,9 +46,7 @@
       cursor: pointer;
       transition: background 0.3s ease;
     }
-    button:hover {
-      background: #00cc88;
-    }
+    button:hover { background: #00cc88; }
   </style>
 </head>
 <body>
@@ -69,38 +61,36 @@
     <button id="flip-btn">🔄 Flip Camera</button>
   </div>
 
-  <div id="status">Loading models...</div>
+  <div id="status">Loading multiple models...</div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/efficientdet"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/facemesh"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const status = document.getElementById('status');
     const flipBtn = document.getElementById('flip-btn');
-    let cocoModel, mobileModel;
+    const status = document.getElementById('status');
+
+    let cocoModel, mobileModel, effDetModel, faceModel, blazeModel, bodyModel, handModel;
+    let modelsLoaded = 0;
     let currentFacingMode = 'environment';
     let stream;
 
     async function setupCamera() {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-
-      const constraints = {
-        video: {
-          facingMode: { exact: currentFacingMode }
-        }
-      };
-
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      const constraints = { video: { facingMode: { exact: currentFacingMode } } };
       stream = await navigator.mediaDevices.getUserMedia(constraints).catch(async () => {
         return navigator.mediaDevices.getUserMedia({ video: true });
       });
-
       video.srcObject = stream;
-
       return new Promise(resolve => {
         video.onloadedmetadata = () => {
           canvas.width = video.videoWidth;
@@ -111,66 +101,7 @@
     }
 
     async function detectObjects() {
-      const cocoPreds = await cocoModel.detect(video);
-      const mobilePreds = await mobileModel.classify(video);
+      const predictions = [];
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      // Combine results intelligently
-      let allPredictions = [];
-
-      cocoPreds.forEach(p => {
-        allPredictions.push({
-          class: p.class,
-          score: p.score,
-          bbox: p.bbox
-        });
-      });
-
-      mobilePreds.forEach(p => {
-        allPredictions.push({
-          class: p.className,
-          score: p.probability,
-          bbox: [20, 20, canvas.width - 40, 40] // approximate bounding for classification
-        });
-      });
-
-      // Take only top predictions
-      allPredictions.sort((a, b) => b.score - a.score);
-      const topPred = allPredictions[0];
-
-      if (topPred) {
-        ctx.strokeStyle = '#00ff99';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(...topPred.bbox);
-        ctx.fillStyle = '#00ff99';
-        ctx.font = '18px Arial';
-        ctx.fillText(
-          `${topPred.class} (${Math.round(topPred.score * 100)}%)`,
-          topPred.bbox[0],
-          topPred.bbox[1] > 20 ? topPred.bbox[1] - 5 : 20
-        );
-      }
-
-      requestAnimationFrame(detectObjects);
-    }
-
-    async function startApp() {
-      await setupCamera();
-      video.play();
-      cocoModel = await cocoSsd.load();
-      mobileModel = await mobilenet.load();
-      status.innerText = 'Models loaded. Detecting objects...';
-      detectObjects();
-    }
-
-    flipBtn.addEventListener('click', async () => {
-      currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-      await setupCamera();
-    });
-
-    startApp();
-  </script>
-</body>
-</html>
+      if (cocoModel) (await cocoModel.detect(video)).forEach(p => predictions.push({ model: 'COCO', ...p }));
+      if (mobileModel) (await mobileModel.classify(video)).forEach(p => predictions.push({ model: 'MobileNet', class: p.className, score: p.probability, bbox: [10,10,200,30]
