@@ -1,9 +1,18 @@
 {
-  "name": "obrd-hybrid-detection",
-  "version": "2.0.0",
-  "description": "Hybrid offline+cloud object detection PWA",
+  "name": "obrd-object-detection-pwa",
+  "version": "1.0.0",
+  "description": "OBRD Hybrid Object Detection Progressive Web App",
   "scripts": {
-    "start": "npx http-server -p 8080",
-    "api": "node api-server/server.js"
-  }
+    "start": "npx http-server -p 8080"
+  },
+  "dependencies": {},
+  "keywords": [
+    "object-detection",
+    "pwa",
+    "tensorflow.js",
+    "huggingface",
+    "fastapi"
+  ],
+  "author": "",
+  "license": "MIT"
 }
