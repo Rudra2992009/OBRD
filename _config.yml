@@ -1,0 +1,21 @@
+title: "OBRD : Hybrid Object Detection"
+description: "Offline + Cloud Object Detection PWA with TensorFlow.js and FastAPI"
+theme: minima
+exclude:
+  - api-server/         # exclude Python backend folder
+  - node_modules/
+  - package.json
+  - package-lock.json
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+  - docker/
+  - .github/
+  - venv/
+  - .venv/
+include:
+  - manifest.json
+  - service-worker.js
+  - static/js/apiBridge.js
+markdown: kramdown
+plugins: []
